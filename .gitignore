@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+logs/*.log
+downloads/*
+!downloads/.gitkeep
+src/config/theta-citron-477513-f6-a2c85e622c82.json
+src/config/*service-account*.json
+src/config/*.private-key.json
+.github/
+.vscode/
+.DS_Store

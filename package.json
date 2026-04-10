@@ -1,0 +1,30 @@
+{
+  "name": "pierre-project---data-scraping",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "container": "npm run build && npm run docker:build && npm run docker:run",
+    "docker:build": "docker build -t apciq-centris-scraper .",
+    "docker:run": "docker run --rm --env-file .env -v \"$(pwd)/logs:/app/logs\" -v \"$(pwd)/downloads:/app/downloads\" --shm-size=2g apciq-centris-scraper",
+    "docker:up": "npm run docker:run",
+    "docker:down": "docker ps -a --filter name=apciq-centris-scraper -q | xargs -r docker rm -f"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "googleapis": "^152.0.0",
+    "twilio": "^5.13.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2"
+  }
+}

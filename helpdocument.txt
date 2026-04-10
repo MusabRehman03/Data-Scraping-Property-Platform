@@ -1,0 +1,33 @@
+# Help Document
+
+## How to run the script
+
+1. Install dependencies:
+   npm install
+2. Set up your .env file with credentials.
+3. Run Google setup check:
+   npm run setup:google
+4. Run production build:
+   npm run build
+   npm start
+
+## Main commands
+- npm run dev
+- npm run setup:google
+- npm run build
+- npm start
+
+## Troubleshooting
+- Check logs/execution.log for errors.
+- Ensure all environment variables are set.
+- Confirm the service account file path in GOOGLE_SERVICE_ACCOUNT_JSON is correct.
+- Confirm spreadsheet id and drive root folder id are valid.
+- Confirm the service account email has Editor access to both the target Sheet and Drive folder.
+
+## Restart/fix
+- Fix any .env or code issues, then rerun.
+
+## Google Drive/Sheets structure
+- Setup check creates/uses: APCIQ Automation/setup-check
+- Setup check appends a row in the configured sheet tab.
+- Future scraping data rows and documents will reuse the same integrations.

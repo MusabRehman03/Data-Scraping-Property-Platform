@@ -1,0 +1,13 @@
+services:
+  scraper:
+    container_name: apciq-centris-scraper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./downloads:/app/downloads
+    shm_size: "1gb"
+    restart: "no"
