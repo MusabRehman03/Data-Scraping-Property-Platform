@@ -31,9 +31,13 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 	const logger: ExecutionLogger = shared?.logger ?? createExecutionLogger('copropriete');
 	const ownsLogger = !shared?.logger;
 	let leadsProcessed = 0;
+	const infoLog = (message: string): void => {
+		globalThis.console.log(message);
+	};
+	const console = { ...globalThis.console, log: (..._args: unknown[]) => undefined };
 
 	const logStep = (action: LogAction, message: string): void => {
-		console.log(message);
+		infoLog(message);
 		logger.step(action, message);
 	};
 
@@ -113,7 +117,7 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 
 			const otherCity = addressFields[3];
 			const otherZip = addressFields[4];
-			console.log(`Listing ${listingId}: data captured from property detail view.`);
+			infoLog(`Listing ${listingId}: data scraped.`);
 
 			const currentYear = new Date().getFullYear().toString();
 			const folderId = await ensureDriveFolderPath([currentYear, 'EXPIRED', centrisNumber || 'UNKNOWN']);
@@ -122,7 +126,7 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 			const documentLinks = page2.locator(".formula.field.d15899m6 a[data-mtx-track='Results - In-Display Popup Link Click']");
 			const docCount = await documentLinks.count();
 			let docsUploaded = 0;
-			console.log(`Listing ${listingId}: found ${docCount} document link(s) for upload.`);
+			infoLog(`Listing ${listingId}: found ${docCount} document link(s).`);
 
 			const getExtFromMime = (mimeRaw: string) => {
 				const mime = (mimeRaw || '').toLowerCase().split(';')[0].trim();
@@ -413,10 +417,10 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 				await humanDelay(page2, 2500, 4000);
 			}
 
-			console.log(`Listing ${listingId}: documents uploaded (${docsUploaded}/${docCount}).`);
+			infoLog(`Listing ${listingId}: documents uploaded to Google Drive (${docsUploaded}/${docCount}).`);
 
 			// Matrix capture
-			console.log(`Listing ${listingId}: Matrix PDF generation started.`);
+			infoLog(`Listing ${listingId}: Matrix PDF generation started.`);
 			await page2.waitForTimeout(10_000);
 			await page2.locator('.linkIcon.icon_print').first().click();
 			await page2.waitForLoadState('domcontentloaded').catch(() => null);
@@ -749,9 +753,9 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 			}
 
 			if (matrixUploaded) {
-				console.log(`Listing ${listingId}: Matrix PDF captured and uploaded.`);
+				infoLog(`Listing ${listingId}: Matrix PDF found and uploaded.`);
 			} else {
-				console.log(`Listing ${listingId}: Matrix PDF not captured.`);
+				infoLog(`Listing ${listingId}: Matrix PDF not found.`);
 			}
 
 			if (matrixPopup && !matrixPopup.isClosed()) await matrixPopup.close().catch(() => { });
@@ -831,7 +835,7 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 
 			if (!page3.isClosed()) await page3.close().catch(() => { });
 			leadsProcessed += 1;
-			console.log(`Listing ${listingId}: completed.`);
+			infoLog(`Listing ${listingId}: completed.`);
 		};
 
 		await page2.locator('#m_pnlDisplay').waitFor({ state: 'visible', timeout: 60_000 }).catch(() => null);
@@ -839,6 +843,16 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 
 		const rows = page2.locator('td.d15877m6');
 		const rowCount = await rows.count();
+		let listingsWithoutMarker = 0;
+		for (let i = 0; i < rowCount; i++) {
+			const row = rows.nth(i);
+			const mainLink = row.locator("a[data-mtx-track='Results - In-Display Full Link Click']").first();
+			if (!await mainLink.isVisible().catch(() => false)) continue;
+			const markerCount = await row.locator("a[data-original-title*='Il existe une inscription en vigueur pour cette propriété.']").count();
+			if (markerCount === 0) listingsWithoutMarker += 1;
+		}
+		infoLog(`Found ${listingsWithoutMarker} listing(s) without inscription marker.`);
+		logStep('SCRAPING', `Found ${listingsWithoutMarker} listing(s) without inscription marker.`);
 		let firstListingOpened = false;
 
 		for (let i = 0; i < rowCount; i++) {
@@ -930,7 +944,6 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 	} finally {
 		if (ownsLogger) {
 			logger.finalize(leadsProcessed);
-			console.log(`Execution log saved to: ${logger.filePath}`);
 		}
 	}
 
@@ -945,7 +958,6 @@ if (require.main === module) {
 			try {
 				const leads = await scrapeCopropriete({ matrixPage: session.matrixPage, logger });
 				logger.finalize(leads);
-				console.log(`Execution log saved to: ${logger.filePath}`);
 			} finally {
 				await session.browser.close();
 			}

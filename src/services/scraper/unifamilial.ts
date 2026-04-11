@@ -31,9 +31,13 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 	const logger: ExecutionLogger = shared?.logger ?? createExecutionLogger('unifamilial');
 	const ownsLogger = !shared?.logger;
 	let leadsProcessed = 0;
+	const infoLog = (message: string): void => {
+		globalThis.console.log(message);
+	};
+	const console = { ...globalThis.console, log: (..._args: unknown[]) => undefined };
 
 	const logStep = (action: LogAction, message: string): void => {
-		console.log(message);
+		infoLog(message);
 		logger.step(action, message);
 	};
 
@@ -82,13 +86,13 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 			const rawPrice = await page2.locator('.field.formula.d156m18').first().textContent();
 			const price = rawPrice
 				? (() => {
-						const dollarIndex = rawPrice.indexOf('$');
-						if (dollarIndex >= 0) {
-							const pickedPrice = rawPrice.slice(0, dollarIndex);
-							return pickedPrice.replace(/\s+/g, '');
-						}
-						return formatPrice(rawPrice);
-					})()
+					const dollarIndex = rawPrice.indexOf('$');
+					if (dollarIndex >= 0) {
+						const pickedPrice = rawPrice.slice(0, dollarIndex);
+						return pickedPrice.replace(/\s+/g, '');
+					}
+					return formatPrice(rawPrice);
+				})()
 				: null;
 
 			const rawCentris = await page2.locator('.formula.field.d156m5').first().textContent();
@@ -108,7 +112,7 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 
 			const otherCity = addressFields[1];
 			const otherZip = addressFields[2];
-			console.log(`Listing ${listingId}: data captured from property detail view.`);
+			infoLog(`Listing ${listingId}: data scraped.`);
 
 			// Step 15.5: Download documents from page2 and upload to Google Drive under year/EXPIRED/[centrisNumber]
 			const currentYear = new Date().getFullYear().toString();
@@ -118,7 +122,7 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 			const documentLinks = page2.locator(".formula.field.d15899m6 a[data-mtx-track='Results - In-Display Popup Link Click']");
 			const docCount = await documentLinks.count();
 			let docsUploaded = 0;
-			console.log(`Listing ${listingId}: found ${docCount} document link(s) for upload.`);
+			infoLog(`Listing ${listingId}: found ${docCount} document link(s).`);
 
 			const getExtFromMime = (mimeRaw: string) => {
 				const mime = (mimeRaw || '').toLowerCase().split(';')[0].trim();
@@ -412,11 +416,11 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 				await humanDelay(page2, 2500, 4000);
 			}
 
-			console.log(`Listing ${listingId}: documents uploaded (${docsUploaded}/${docCount}).`);
+			infoLog(`Listing ${listingId}: documents uploaded to Google Drive (${docsUploaded}/${docCount}).`);
 
 			// Step 15.6: Matrix PDF capture
-      console.log(`Listing ${listingId}: Matrix PDF generation started.`);
-      await page2.waitForTimeout(10_000);
+			infoLog(`Listing ${listingId}: Matrix PDF generation started.`);
+			await page2.waitForTimeout(10_000);
 			await page2.locator('.linkIcon.icon_print').first().click();
 			await page2.waitForLoadState('domcontentloaded').catch(() => null);
 			await humanDelay(page2, 1200, 2200);
@@ -767,9 +771,9 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 			}
 
 			if (matrixUploaded) {
-				console.log(`Listing ${listingId}: Matrix PDF captured and uploaded.`);
+				infoLog(`Listing ${listingId}: Matrix PDF found and uploaded.`);
 			} else {
-				console.log(`Listing ${listingId}: Matrix PDF not captured.`);
+				infoLog(`Listing ${listingId}: Matrix PDF not found.`);
 			}
 
 			if (matrixPopup && !matrixPopup.isClosed()) await matrixPopup.close().catch(() => { });
@@ -860,7 +864,7 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 			if (!page3.isClosed()) await page3.close().catch(() => { });
 
 			leadsProcessed += 1;
-			console.log(`Listing ${listingId}: completed.`);
+			infoLog(`Listing ${listingId}: completed.`);
 		};
 
 		// Step 14+: open the first valid listing once, then use detail-view next listing button.
@@ -869,6 +873,16 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 
 		const rows = page2.locator('td.d15872m6');
 		const rowCount = await rows.count();
+		let listingsWithoutMarker = 0;
+		for (let i = 0; i < rowCount; i++) {
+			const row = rows.nth(i);
+			const mainLink = row.locator("a[data-mtx-track='Results - In-Display Full Link Click']").first();
+			if (!await mainLink.isVisible().catch(() => false)) continue;
+			const markerCount = await row.locator("a[data-original-title*='Il existe une inscription en vigueur pour cette propriété.']").count();
+			if (markerCount === 0) listingsWithoutMarker += 1;
+		}
+		infoLog(`Found ${listingsWithoutMarker} listing(s) without inscription marker.`);
+		logStep('SCRAPING', `Found ${listingsWithoutMarker} listing(s) without inscription marker.`);
 		let firstListingOpened = false;
 
 		for (let i = 0; i < rowCount; i++) {
@@ -965,7 +979,6 @@ export async function scrapeResidential(shared?: SharedScraperContext): Promise<
 	} finally {
 		if (ownsLogger) {
 			logger.finalize(leadsProcessed);
-			console.log(`Execution log saved to: ${logger.filePath}`);
 		}
 	}
 
@@ -980,7 +993,6 @@ if (require.main === module) {
 			try {
 				const leads = await scrapeResidential({ matrixPage: session.matrixPage, logger });
 				logger.finalize(leads);
-				console.log(`Execution log saved to: ${logger.filePath}`);
 			} finally {
 				await session.browser.close();
 			}

@@ -37,7 +37,7 @@ Create `.env` from template:
 cp .env.example .env
 ```
 
-Fill at least these required variables:
+Fill at least these required variables by using nano or other options:
 
 # Example environment variables
 - `APCIQ_USERNAME`
@@ -155,7 +155,7 @@ Fix:
 
 - Keep only one long scraper run at a time to avoid session conflicts.
 - Logs are your primary source for run diagnostics.
-- If automation is interrupted, rerun from the standard entry (`npm run dev` or `npm start`).
+- If automation is interrupted, rerun from the standard entry (`npm run dev` or `npm start` or `npm run container` for containerized execution via docker).
 
 ## 10) Containerized execution (VPS-safe mode)
 
@@ -173,7 +173,9 @@ npm run container
 npm run docker:build
 ```
 
-### Run one isolated execution
+### Run all categories at once (full workflow)
+
+This runs `dist/index.js` inside the container (shared login + sequential run of all categories).
 
 ```bash
 npm run docker:run
@@ -183,6 +185,24 @@ npm run docker:run
 
 ```bash
 npm run docker:up
+```
+
+### Run one single category at a time (inside container)
+
+Build first (if not already built):
+
+```bash
+npm run build
+npm run docker:build
+```
+
+Then run only one category:
+
+```bash
+docker run --rm --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/downloads:/app/downloads" --shm-size=2g apciq-centris-scraper node dist/services/scraper/unifamilial.js
+docker run --rm --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/downloads:/app/downloads" --shm-size=2g apciq-centris-scraper node dist/services/scraper/copropriete.js
+docker run --rm --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/downloads:/app/downloads" --shm-size=2g apciq-centris-scraper node dist/services/scraper/plex.js
+docker run --rm --env-file .env -v "$(pwd)/logs:/app/logs" -v "$(pwd)/downloads:/app/downloads" --shm-size=2g apciq-centris-scraper node dist/services/scraper/commercial.js
 ```
 
 ### Stop and remove old scraper containers
