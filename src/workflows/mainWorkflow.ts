@@ -42,10 +42,10 @@ export async function mainWorkflow(): Promise<void> {
     const session = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
     const shared = { matrixPage: session.matrixPage, logger: orchestratorLogger };
 
-    // await safeRun('Unifamilial', () => scrapeResidential(shared));
-    // await safeRun('Copropriete', () => scrapeCopropriete(shared));
-    // await safeRun('Plex', () => scrapePlex(shared));
-    // await safeRun('Commercial', () => scrapeCommercial(shared));
+    await safeRun('Unifamilial', () => scrapeResidential(shared));
+    await safeRun('Copropriete', () => scrapeCopropriete(shared));
+    await safeRun('Plex', () => scrapePlex(shared));
+    await safeRun('Commercial', () => scrapeCommercial(shared));
 
     // Always trigger the external phone lookup endpoint at the end of the run.
     try {
