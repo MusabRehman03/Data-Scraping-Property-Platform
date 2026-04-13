@@ -1,6 +1,6 @@
 import { type Request, type Response } from '@playwright/test';
 import { ensureDriveFolderPath, uploadToDrive } from '../integrations/googleDrive';
-import { appendRowByColumns } from '../integrations/googleSheets';
+import { appendRowByHeaders } from '../integrations/googleSheets';
 import { login } from '../auth/login';
 import { humanDelay } from '../../utils/delay';
 import {
@@ -790,35 +790,35 @@ export async function scrapeCommercial(shared?: SharedScraperContext): Promise<n
       const mailingZip = locParts.zip;
       console.log(`Listing ${listingId}: owner details captured.`);
 
-      const mockDataByColumn = {
-        D: 'Prospect',
-        E: 'Expired',
-        F: centrisNumber || 'NF',
-        G: 'Commercial',
-        H: price || 'NF',
-        J: lotNumber || 'NF',
-        M: firstName || 'NF',
-        N: lastName || 'NF',
-        T: phoneNumber || '',
-        AJ: otherAppartment || '',
-        AK: otherStreetNumber || 'NF',
-        AL: otherStreetName || 'NF',
-        AM: otherCity || 'NF',
-        AN: otherZip || 'NF',
-        AO: 'Quebec',
-        AP: 'Canada',
-        AQ: mailingAppartment || '',
-        AR: mailingStreetNumber || 'NF',
-        AS: mailingStreetName || 'NF',
-        AT: mailingCity || 'NF',
-        AU: mailingZip || 'NF',
-        AV: 'Quebec',
-        AW: 'Canada',
-        BC: driveFolderUrl || 'NF',
+      const mockDataByHeader = {
+        Type: 'Prospect',
+        'Lead Source': 'Expired',
+        'Reference Number': centrisNumber || 'NF',
+        'Type Propriete': 'Commercial',
+        Price: price || 'NF',
+        'Numero lot': lotNumber || 'NF',
+        'First Name': firstName || 'NF',
+        'Last Name': lastName || 'NF',
+        Phone: phoneNumber || '',
+        'Other Unit': otherAppartment || '',
+        'Other Street Number': otherStreetNumber || 'NF',
+        'Other Street': otherStreetName || 'NF',
+        'Other City': otherCity || 'NF',
+        'Other Zip': otherZip || 'NF',
+        'Other State': 'Quebec',
+        'Other Country': 'Canada',
+        'Mailing Unit': mailingAppartment || '',
+        'Mailing Street Number': mailingStreetNumber || 'NF',
+        'Mailing Street': mailingStreetName || 'NF',
+        'Mailing City': mailingCity || 'NF',
+        'Mailing Zip': mailingZip || 'NF',
+        'Mailing State': 'Quebec',
+        'Mailing Country': 'Canada',
+        'Google Drive': driveFolderUrl || 'NF',
       };
 
       try {
-        await appendRowByColumns(mockDataByColumn);
+        await appendRowByHeaders(mockDataByHeader);
         console.log(`Listing ${listingId}: lead exported to Google Sheets.`);
       } catch (error: any) {
         logError('EXPORT', 'Google Sheets append failed.', error);
