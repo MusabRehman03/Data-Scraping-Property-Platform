@@ -808,7 +808,7 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 				J: lotNumber || 'NF',
 				M: firstName || 'NF',
 				N: lastName || 'NF',
-				T: phoneNumber || 'NF',
+				T: phoneNumber || '',
 				AJ: otherAppartment || '',
 				AK: otherStreetNumber || 'NF',
 				AL: otherStreetName || 'NF',

@@ -801,7 +801,7 @@ export async function scrapePlex(shared?: SharedScraperContext): Promise<number>
         J: lotNumber || 'NF',
         M: firstName || 'NF',
         N: lastName || 'NF',
-        T: phoneNumber || 'NF',
+        T: phoneNumber || '',
         AJ: otherAppartment || '',
         AK: otherStreetNumber || 'NF',
         AL: otherStreetName || 'NF',

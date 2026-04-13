@@ -9,6 +9,17 @@ import { scrapeCommercial } from '../services/scraper/commercial';
 const APCIQ_USER = process.env.APCIQ_USERNAME || process.env.APCIQ_USER || '';
 const APCIQ_PASSWORD = process.env.APCIQ_PASSWORD || '';
 
+type PhoneLookupResponse = {
+  status?: string;
+  message?: string;
+  sheet_id?: string;
+  worksheet?: string;
+  trigger_url?: string;
+  log_file?: string;
+  csv_log?: string;
+  user?: string;
+};
+
 // Main business flow placeholder
 export async function mainWorkflow(): Promise<void> {
 
@@ -28,13 +39,74 @@ export async function mainWorkflow(): Promise<void> {
   };
 
   try {
-  const session = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
+    const session = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
     const shared = { matrixPage: session.matrixPage, logger: orchestratorLogger };
 
-    await safeRun('Unifamilial', () => scrapeResidential(shared));
-    await safeRun('Copropriete', () => scrapeCopropriete(shared));
-    await safeRun('Plex', () => scrapePlex(shared));
-    await safeRun('Commercial', () => scrapeCommercial(shared));
+    // await safeRun('Unifamilial', () => scrapeResidential(shared));
+    // await safeRun('Copropriete', () => scrapeCopropriete(shared));
+    // await safeRun('Plex', () => scrapePlex(shared));
+    // await safeRun('Commercial', () => scrapeCommercial(shared));
+
+    // Always trigger the external phone lookup endpoint at the end of the run.
+    try {
+      const triggerUrl = 'https://sctelelisting.solutionimmobiliere.ca/lookup';
+      orchestratorLogger.step('SYSTEM', `Triggering phone lookup endpoint: ${triggerUrl}`);
+      // Use Playwright's APIRequestContext on the existing browser context to fire the unauthenticated request.
+      // This avoids opening a new tab and reuses the current network environment.
+      const response = await session.context.request.get(triggerUrl, { timeout: 60_000 });
+      const status = response.status();
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch (e) {
+        bodyText = '<unable to read response body>';
+      }
+
+      if (response.ok()) {
+        let parsed: PhoneLookupResponse | null = null;
+        try {
+          parsed = JSON.parse(bodyText) as PhoneLookupResponse;
+        } catch (_parseError) {
+          parsed = null;
+        }
+
+        if (parsed) {
+          orchestratorLogger.step(
+            'SYSTEM',
+            `Phone lookup response accepted by API gateway: httpStatus=${status} status=${parsed.status ?? 'unknown'} message=${parsed.message ?? 'n/a'}`
+          );
+
+          orchestratorLogger.step(
+            'SYSTEM',
+            `Phone lookup metadata: sheet_id=${parsed.sheet_id ?? 'n/a'} worksheet=${parsed.worksheet ?? 'n/a'} trigger_url=${parsed.trigger_url ?? triggerUrl} user=${parsed.user ?? 'n/a'}`
+          );
+
+          orchestratorLogger.step(
+            'SYSTEM',
+            `Phone lookup logs: log_file=${parsed.log_file ?? 'n/a'} csv_log=${parsed.csv_log ?? 'n/a'}`
+          );
+
+          if (parsed.status !== 'accepted') {
+            orchestratorLogger.anomaly(
+              'SYSTEM',
+              `Phone lookup endpoint responded with unexpected status value: ${parsed.status ?? 'undefined'}`
+            );
+          }
+        } else {
+          orchestratorLogger.anomaly(
+            'SYSTEM',
+            `Phone lookup trigger returned non-JSON body: httpStatus=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
+          );
+        }
+      } else {
+        orchestratorLogger.anomaly(
+          'SYSTEM',
+          `Phone lookup trigger returned non-OK status=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
+        );
+      }
+    } catch (triggerErr) {
+      orchestratorLogger.error('SYSTEM', 'Failed to trigger phone lookup endpoint.', triggerErr);
+    }
 
     await session.browser.close();
     browserClosed = true;
