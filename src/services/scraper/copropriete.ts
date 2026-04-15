@@ -1,6 +1,6 @@
 import { type Request, type Response } from '@playwright/test';
 import { ensureDriveFolderPath, uploadToDrive } from '../integrations/googleDrive';
-import { appendRowByHeaders } from '../integrations/googleSheets';
+import { appendRowByHeaders, getExistingReferenceNumbers } from '../integrations/googleSheets';
 import { login } from '../auth/login';
 import { humanDelay } from '../../utils/delay';
 import {
@@ -51,6 +51,11 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 		logger.error(action, message, error);
 	};
 
+	const normalizeReferenceNumber = (value: string | null | undefined): string => {
+		if (!value) return '';
+		return String(value).trim().toLowerCase();
+	};
+
 	const page2 = shared.matrixPage;
 
 	try {
@@ -74,6 +79,9 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 		// Step 12: Execute search
 		await page2.locator('#m_ucSearchButtons_m_lbSearch').click();
 		await humanDelay(page2, 3000, 4500);
+
+		const existingReferenceNumbers = await getExistingReferenceNumbers();
+		logStep('EXPORT', `Loaded ${existingReferenceNumbers.size} existing reference number(s) from Google Sheets for duplicate checks.`);
 
 		const returnToResultsGrid = async () => {
 			const listingLocator = page2.locator("td.d15877m6 a[data-mtx-track='Results - In-Display Full Link Click']");
@@ -828,6 +836,7 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 
 			try {
 				await appendRowByHeaders(mockDataByHeader);
+				existingReferenceNumbers.add(normalizeReferenceNumber(centrisNumber));
 				console.log(`Listing ${listingId}: lead exported to Google Sheets.`);
 			} catch (error: any) {
 				logError('EXPORT', 'Google Sheets append failed.', error);
@@ -864,6 +873,12 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 			const markerCount = await row.locator("a[data-original-title*='Il existe une inscription en vigueur pour cette propriété.']").count();
 			if (markerCount > 0) {
 				logAnomaly('SCRAPING', `Skipped listing ${listingId}: active inscription marker found.`);
+				continue;
+			}
+
+			const normalizedListingId = normalizeReferenceNumber(listingId);
+			if (normalizedListingId && existingReferenceNumbers.has(normalizedListingId)) {
+				logAnomaly('SCRAPING', `Centris listing ${listingId} is already present in the Google Sheet, so skipping to prevent duplication.`);
 				continue;
 			}
 
@@ -922,6 +937,15 @@ export async function scrapeCopropriete(shared?: SharedScraperContext): Promise<
 			const hasActiveMarker = await hasActiveInscriptionMarkerOnDetail();
 			if (hasActiveMarker) {
 				logAnomaly('SCRAPING', `Skipped listing ${currentListingId}: active inscription marker found on detail view.`);
+				const moved = await moveToNextListing();
+				if (!moved) break;
+				listingIndex += 1;
+				continue;
+			}
+
+			const normalizedCurrentListingId = normalizeReferenceNumber(currentListingId);
+			if (normalizedCurrentListingId && existingReferenceNumbers.has(normalizedCurrentListingId)) {
+				logAnomaly('SCRAPING', `Centris listing ${currentListingId} is already present in the Google Sheet, so skipping to prevent duplication.`);
 				const moved = await moveToNextListing();
 				if (!moved) break;
 				listingIndex += 1;

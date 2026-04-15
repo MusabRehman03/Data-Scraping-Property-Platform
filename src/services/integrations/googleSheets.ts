@@ -110,6 +110,38 @@ export async function appendRowByHeaders(headerMap: HeaderMap): Promise<void> {
   });
 }
 
+export async function getExistingValuesByHeader(headerName: string): Promise<string[]> {
+  const config = getAppConfig();
+  const { sheets } = getGoogleClients();
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: config.googleSpreadsheetId,
+    range: `${config.googleSheetTabName}!A:ZZ`,
+  });
+
+  const rows = response.data.values || [];
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const headers = rows[0].map((h) => String(h || ''));
+  const headerIndex = headers.findIndex((header) => normalizeHeader(header) === normalizeHeader(headerName));
+
+  if (headerIndex === -1) {
+    throw new Error(`Missing required sheet header: ${headerName}`);
+  }
+
+  return rows
+    .slice(1)
+    .map((row) => normalizeReferenceValue(row[headerIndex]))
+    .filter((value) => value.length > 0);
+}
+
+export async function getExistingReferenceNumbers(): Promise<Set<string>> {
+  const values = await getExistingValuesByHeader('Reference Number');
+  return new Set(values);
+}
+
 function normalizeCellValue(value: LeadRow[string]): string {
   if (value === null || value === undefined) {
     return '';
@@ -135,4 +167,12 @@ function columnToIndex(column: string): number {
 
 function normalizeHeader(header: string): string {
   return String(header || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeReferenceValue(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  return String(value).trim().toLowerCase();
 }
