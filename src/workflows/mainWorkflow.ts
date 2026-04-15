@@ -20,103 +20,151 @@ type PhoneLookupResponse = {
   user?: string;
 };
 
-// Main business flow placeholder
-export async function mainWorkflow(): Promise<void> {
+type CategoryRunner = (shared: { matrixPage: any; logger: ReturnType<typeof createExecutionLogger> }) => Promise<number>;
 
-  const orchestratorLogger = createExecutionLogger('all-categories');
-  let totalLeadsProcessed = 0;
-  let browserClosed = false;
+type CategoryDefinition = {
+  label: string;
+  runner: CategoryRunner;
+};
 
-  const safeRun = async (label: string, runner: () => Promise<number>) => {
-    try {
-      orchestratorLogger.step('SYSTEM', `Starting category: ${label}`);
-      const leads = await runner();
-      totalLeadsProcessed += leads;
-      orchestratorLogger.step('SYSTEM', `Finished category: ${label} | leads=${leads}`);
-    } catch (error) {
-      orchestratorLogger.error('SYSTEM', `Category failed: ${label}`, error);
-    }
-  };
-
+async function triggerPhoneLookup(orchestratorLogger: ReturnType<typeof createExecutionLogger>): Promise<void> {
   try {
-    const session = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
-    const shared = { matrixPage: session.matrixPage, logger: orchestratorLogger };
+    const triggerUrl = 'https://sctelelisting.solutionimmobiliere.ca/lookup';
+    orchestratorLogger.step('SYSTEM', `Triggering phone lookup endpoint: ${triggerUrl}`);
 
-    await safeRun('Unifamilial', () => scrapeResidential(shared));
-    await safeRun('Copropriete', () => scrapeCopropriete(shared));
-    await safeRun('Plex', () => scrapePlex(shared));
-    await safeRun('Commercial', () => scrapeCommercial(shared));
+    const response = await fetch(triggerUrl, { method: 'GET' });
+    const status = response.status;
+    const bodyText = await response.text().catch(() => '<unable to read response body>');
 
-    // Always trigger the external phone lookup endpoint at the end of the run.
-    try {
-      const triggerUrl = 'https://sctelelisting.solutionimmobiliere.ca/lookup';
-      orchestratorLogger.step('SYSTEM', `Triggering phone lookup endpoint: ${triggerUrl}`);
-      // Use Playwright's APIRequestContext on the existing browser context to fire the unauthenticated request.
-      // This avoids opening a new tab and reuses the current network environment.
-      const response = await session.context.request.get(triggerUrl, { timeout: 60_000 });
-      const status = response.status();
-      let bodyText = '';
+    if (response.ok) {
+      let parsed: PhoneLookupResponse | null = null;
       try {
-        bodyText = await response.text();
-      } catch (e) {
-        bodyText = '<unable to read response body>';
+        parsed = JSON.parse(bodyText) as PhoneLookupResponse;
+      } catch (_parseError) {
+        parsed = null;
       }
 
-      if (response.ok()) {
-        let parsed: PhoneLookupResponse | null = null;
-        try {
-          parsed = JSON.parse(bodyText) as PhoneLookupResponse;
-        } catch (_parseError) {
-          parsed = null;
-        }
+      if (parsed) {
+        orchestratorLogger.step(
+          'SYSTEM',
+          `Phone lookup response accepted by API gateway: httpStatus=${status} status=${parsed.status ?? 'unknown'} message=${parsed.message ?? 'n/a'}`
+        );
 
-        if (parsed) {
-          orchestratorLogger.step(
-            'SYSTEM',
-            `Phone lookup response accepted by API gateway: httpStatus=${status} status=${parsed.status ?? 'unknown'} message=${parsed.message ?? 'n/a'}`
-          );
+        orchestratorLogger.step(
+          'SYSTEM',
+          `Phone lookup metadata: sheet_id=${parsed.sheet_id ?? 'n/a'} worksheet=${parsed.worksheet ?? 'n/a'} trigger_url=${parsed.trigger_url ?? triggerUrl} user=${parsed.user ?? 'n/a'}`
+        );
 
-          orchestratorLogger.step(
-            'SYSTEM',
-            `Phone lookup metadata: sheet_id=${parsed.sheet_id ?? 'n/a'} worksheet=${parsed.worksheet ?? 'n/a'} trigger_url=${parsed.trigger_url ?? triggerUrl} user=${parsed.user ?? 'n/a'}`
-          );
+        orchestratorLogger.step(
+          'SYSTEM',
+          `Phone lookup logs: log_file=${parsed.log_file ?? 'n/a'} csv_log=${parsed.csv_log ?? 'n/a'}`
+        );
 
-          orchestratorLogger.step(
-            'SYSTEM',
-            `Phone lookup logs: log_file=${parsed.log_file ?? 'n/a'} csv_log=${parsed.csv_log ?? 'n/a'}`
-          );
-
-          if (parsed.status !== 'accepted') {
-            orchestratorLogger.anomaly(
-              'SYSTEM',
-              `Phone lookup endpoint responded with unexpected status value: ${parsed.status ?? 'undefined'}`
-            );
-          }
-        } else {
+        if (parsed.status !== 'accepted') {
           orchestratorLogger.anomaly(
             'SYSTEM',
-            `Phone lookup trigger returned non-JSON body: httpStatus=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
+            `Phone lookup endpoint responded with unexpected status value: ${parsed.status ?? 'undefined'}`
           );
         }
       } else {
         orchestratorLogger.anomaly(
           'SYSTEM',
-          `Phone lookup trigger returned non-OK status=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
+          `Phone lookup trigger returned non-JSON body: httpStatus=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
         );
       }
-    } catch (triggerErr) {
-      orchestratorLogger.error('SYSTEM', 'Failed to trigger phone lookup endpoint.', triggerErr);
+    } else {
+      orchestratorLogger.anomaly(
+        'SYSTEM',
+        `Phone lookup trigger returned non-OK status=${status} bodyPreview=${String(bodyText).slice(0, 300)}`
+      );
+    }
+  } catch (triggerErr) {
+    orchestratorLogger.error('SYSTEM', 'Failed to trigger phone lookup endpoint.', triggerErr);
+  }
+}
+
+// Main business flow placeholder
+export async function mainWorkflow(): Promise<void> {
+
+  const orchestratorLogger = createExecutionLogger('all-categories');
+  let totalLeadsProcessed = 0;
+  const failedFirstPass: CategoryDefinition[] = [];
+
+  const categories: CategoryDefinition[] = [
+    { label: 'Unifamilial', runner: (shared) => scrapeResidential(shared) },
+    { label: 'Copropriete', runner: (shared) => scrapeCopropriete(shared) },
+    { label: 'Plex', runner: (shared) => scrapePlex(shared) },
+    { label: 'Commercial', runner: (shared) => scrapeCommercial(shared) },
+  ];
+
+  const runCategoryOnce = async (label: string, runner: CategoryRunner, shared: { matrixPage: any; logger: ReturnType<typeof createExecutionLogger> }): Promise<number> => {
+    orchestratorLogger.step('SYSTEM', `Starting category: ${label}`);
+    const leads = await runner(shared);
+    orchestratorLogger.step('SYSTEM', `Finished category: ${label} | leads=${leads}`);
+    return leads;
+  };
+
+  const rerunCategoryWithFreshLogin = async (category: CategoryDefinition): Promise<void> => {
+    let session: Awaited<ReturnType<typeof login>> | null = null;
+    try {
+      orchestratorLogger.step('SYSTEM', `Re-running failed category with fresh login: ${category.label}`);
+      session = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
+      const shared = { matrixPage: session.matrixPage, logger: orchestratorLogger };
+      const leads = await runCategoryOnce(`${category.label} (rerun)`, category.runner, shared);
+      totalLeadsProcessed += leads;
+      orchestratorLogger.step('SYSTEM', `Deferred rerun succeeded: ${category.label} | leads=${leads}`);
+    } catch (error) {
+      orchestratorLogger.error('SYSTEM', `Deferred rerun failed: ${category.label}`, error);
+    } finally {
+      if (session) {
+        await session.browser.close().catch(() => null);
+      }
+    }
+  };
+
+  try {
+    let sharedSession: Awaited<ReturnType<typeof login>> | null = null;
+    try {
+      orchestratorLogger.step('SYSTEM', 'Starting first pass for all categories using shared session.');
+      sharedSession = await login(APCIQ_USER, APCIQ_PASSWORD, orchestratorLogger);
+      const shared = { matrixPage: sharedSession.matrixPage, logger: orchestratorLogger };
+
+      for (const category of categories) {
+        try {
+          const leads = await runCategoryOnce(category.label, category.runner, shared);
+          totalLeadsProcessed += leads;
+        } catch (categoryError) {
+          failedFirstPass.push(category);
+          orchestratorLogger.error(
+            'SYSTEM',
+            `Category failed during first pass and will be deferred for rerun: ${category.label}`,
+            categoryError
+          );
+        }
+      }
+    } finally {
+      if (sharedSession) {
+        await sharedSession.browser.close().catch(() => null);
+      }
     }
 
-    await session.browser.close();
-    browserClosed = true;
+    if (failedFirstPass.length > 0) {
+      orchestratorLogger.anomaly(
+        'SYSTEM',
+        `Deferred rerun queue: ${failedFirstPass.map((c) => c.label).join(', ')}`
+      );
+      for (const category of failedFirstPass) {
+        await rerunCategoryWithFreshLogin(category);
+      }
+    } else {
+      orchestratorLogger.step('SYSTEM', 'No category failed in first pass; deferred rerun phase skipped.');
+    }
+
+    await triggerPhoneLookup(orchestratorLogger);
   } catch (error) {
     orchestratorLogger.error('SYSTEM', 'Fatal orchestrator error.', error);
     throw error;
   } finally {
-    if (!browserClosed) {
-      // If login failed before session creation there is no browser to close.
-    }
     orchestratorLogger.finalize(totalLeadsProcessed);
   }
 
