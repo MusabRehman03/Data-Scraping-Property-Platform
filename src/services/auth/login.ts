@@ -53,7 +53,7 @@ export async function login(username: string, password: string, logger?: Executi
     logStep('LOGIN', 'Starting APCIQ/Centris shared login flow.');
     console.log('Login milestone: browser launched and authentication flow started.');
 
-    const launchOptions: Parameters<typeof chromium.launch>[0] = { headless: false };
+    const launchOptions: Parameters<typeof chromium.launch>[0] = { headless: true };
     if (proxyServer) {
       launchOptions.proxy = {
         server: proxyServer,
