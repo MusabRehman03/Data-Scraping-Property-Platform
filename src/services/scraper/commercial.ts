@@ -1,5 +1,5 @@
 import { type Request, type Response } from '@playwright/test';
-import { ensureDriveFolderPath, uploadToDrive } from '../integrations/googleDrive';
+import { countDriveFilesInFolder, ensureDriveFolderPath, findDriveFolderPath, uploadToDrive } from '../integrations/googleDrive';
 import { appendRowByHeaders, getExistingReferenceNumbers } from '../integrations/googleSheets';
 import { login } from '../auth/login';
 import { humanDelay } from '../../utils/delay';
@@ -124,13 +124,34 @@ export async function scrapeCommercial(shared?: SharedScraperContext): Promise<n
       infoLog(`Listing ${listingId}: data scraped.`);
 
       const currentYear = new Date().getFullYear().toString();
-      const folderId = await ensureDriveFolderPath([currentYear, 'EXPIRED', centrisNumber || 'UNKNOWN']);
-      const driveFolderUrl = `https://drive.google.com/drive/folders/${folderId}`;
-
       const documentLinks = page2.locator(".formula.field.d15899m6 a[data-mtx-track='Results - In-Display Popup Link Click']");
       const docCount = await documentLinks.count();
+      const expectedDriveFiles = docCount + 1; // Listing docs + Matrix PDF
       let docsUploaded = 0;
       infoLog(`Listing ${listingId}: found ${docCount} document link(s).`);
+
+      const drivePathSegments = [currentYear, 'EXPIRED', centrisNumber || 'UNKNOWN'];
+      const canCheckExistingDriveFolder = Boolean(centrisNumber && centrisNumber.trim().length > 0);
+      let folderId = canCheckExistingDriveFolder
+        ? await findDriveFolderPath([currentYear, 'EXPIRED', centrisNumber!])
+        : null;
+
+      if (folderId) {
+        const existingFileCount = await countDriveFilesInFolder(folderId);
+        if (existingFileCount >= expectedDriveFiles) {
+          logAnomaly(
+            'EXPORT',
+            `Skipped listing ${listingId}: Drive folder already contains ${existingFileCount} file(s) (expected at least ${expectedDriveFiles}: ${docCount} docs + 1 Matrix PDF).`
+          );
+          return;
+        }
+      }
+
+      if (!folderId) {
+        folderId = await ensureDriveFolderPath(drivePathSegments);
+      }
+
+      const driveFolderUrl = `https://drive.google.com/drive/folders/${folderId}`;
 
       const getExtFromMime = (mimeRaw: string) => {
         const mime = (mimeRaw || '').toLowerCase().split(';')[0].trim();

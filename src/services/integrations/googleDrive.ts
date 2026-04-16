@@ -60,6 +60,69 @@ export async function ensureDriveFolderPath(pathSegments: string[]): Promise<str
   return currentParent;
 }
 
+export async function findDriveFolderPath(pathSegments: string[]): Promise<string | null> {
+  const config = getAppConfig();
+  const { drive } = getGoogleClients();
+
+  let currentParent = config.googleDriveRootFolderId;
+  for (const segment of pathSegments) {
+    const queryParts = [
+      `name = '${escapeQueryValue(segment)}'`,
+      `'${currentParent}' in parents`,
+      `mimeType = 'application/vnd.google-apps.folder'`,
+      'trashed = false',
+    ];
+
+    const existing = await drive.files.list({
+      q: queryParts.join(' and '),
+      fields: 'files(id, name)',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      corpora: config.googleDriveSharedDriveId ? 'drive' : 'user',
+      driveId: config.googleDriveSharedDriveId,
+    });
+
+    const folder = existing.data.files?.[0];
+    if (!folder?.id) {
+      return null;
+    }
+
+    currentParent = folder.id;
+  }
+
+  return currentParent;
+}
+
+export async function countDriveFilesInFolder(folderId: string): Promise<number> {
+  const config = getAppConfig();
+  const { drive } = getGoogleClients();
+
+  let pageToken: string | undefined;
+  let fileCount = 0;
+
+  do {
+    const response = await drive.files.list({
+      q: [
+        `'${folderId}' in parents`,
+        'trashed = false',
+        `mimeType != 'application/vnd.google-apps.folder'`,
+      ].join(' and '),
+      fields: 'nextPageToken, files(id)',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      corpora: config.googleDriveSharedDriveId ? 'drive' : 'user',
+      driveId: config.googleDriveSharedDriveId,
+      pageToken,
+      pageSize: 1000,
+    });
+
+    fileCount += response.data.files?.length ?? 0;
+    pageToken = response.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return fileCount;
+}
+
 export async function uploadToDrive(
   filePath: string,
   parentFolderId?: string,
