@@ -121,7 +121,7 @@ export async function login(username: string, password: string, logger?: Executi
       console.log('Login milestone: browser launched and authentication flow started.');
 
       const session = await withTimeout((async (): Promise<LoginSession> => {
-        const launchOptions: Parameters<typeof chromium.launch>[0] = { headless: false };
+        const launchOptions: Parameters<typeof chromium.launch>[0] = { headless: true };
         if (proxyServer) {
           launchOptions.proxy = {
             server: proxyServer,
