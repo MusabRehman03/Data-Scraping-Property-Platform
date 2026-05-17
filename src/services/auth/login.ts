@@ -139,11 +139,11 @@ export async function login(username: string, password: string, logger?: Executi
           userAgent: pinnedUserAgent
         });
         context.setDefaultTimeout(60_000);
-        context.setDefaultNavigationTimeout(60_000);
+        context.setDefaultNavigationTimeout(90_000);
         const page = await context.newPage();
 
         logStep('NAVIGATION', 'Navigating to APCIQ.');
-        await page.goto('https://apciq.ca/');
+        await page.goto('https://apciq.ca/',{timeout: 180_000});
         await humanDelay(page, 1500, 2500);
 
         const consentButton = page.getByRole('button', { name: 'Autoriser tout' });
@@ -178,7 +178,10 @@ export async function login(username: string, password: string, logger?: Executi
         await humanDelay(page, 2000, 3000);
         console.log('Login milestone: APCIQ credentials submitted.');
 
-        const twoFABox = page.getByRole('textbox', { name: 'Entrez le code à 6 chiffres' });
+        await page.waitForTimeout(5000);
+        await page.waitForLoadState('domcontentloaded', { timeout: 60_000 }); 
+        const twoFABox = page.locator('.c5f9a5df2')
+        const twoFAField = page.locator('#code');
         if (await twoFABox.isVisible().catch(() => false)) {
           logStep('OTP', '2FA required, waiting for OTP from Twilio.');
           console.log('Login milestone: OTP challenge detected.');
@@ -186,7 +189,7 @@ export async function login(username: string, password: string, logger?: Executi
           const otpCode = await getLatestOtp();
 
           await twoFABox.click();
-          await twoFABox.fill(otpCode);
+          await twoFAField.fill(otpCode);
           await humanDelay(page, 500, 1500);
           await page.getByRole('button', { name: 'Continuer' }).click();
           await humanDelay(page, 2000, 3000);
@@ -222,7 +225,8 @@ export async function login(username: string, password: string, logger?: Executi
         if (await didomiAgreeButton.isVisible().catch(() => false)) {
           await didomiAgreeButton.click({ timeout: 60_000 });
         }
-
+        await page1.waitForLoadState('domcontentloaded', { timeout: 60_000 });
+        await page1.waitForTimeout(10000);
         const dontShowAgainButton = page1.getByRole('button', { name: 'Ne plus afficher', exact: true });
         if (await dontShowAgainButton.isVisible().catch(() => false)) {
           await dontShowAgainButton.click({ timeout: 60_000 });
